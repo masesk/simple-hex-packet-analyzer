@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Hex Packet Analyzer</title>
+    <style>
+        :root {
+            --shadow: 0 8px 30px rgba(0,0,0,0.15);
+            --radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        [data-theme="light"] {
+            --primary: #3b82f6;
+            --background: #eef2ff;
+            --card-bg: linear-gradient(135deg, #ffffff, #f8fafc);
+            --text: #1e293b;
+            --input-bg: #ffffff;
+            --input-border: #dbeafe;
+            --accent: #93c5fd;
+        }
+
+        [data-theme="dark"] {
+            --primary: #60a5fa;
+            --background: #0f172a;
+            --card-bg: linear-gradient(135deg, #1e293b, #334155);
+            --text: #e2e8f0;
+            --input-bg: #334155;
+            --input-border: #475569;
+            --accent: #1e40af;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, Arial, sans-serif;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 40px;
+            background: var(--background);
+            color: var(--text);
+            transition: var(--transition);
+            overflow-x: hidden;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding: 15px 25px;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+        }
+
+        h1 {
+            color: var(--primary);
+            font-size: 1.5em;
+            margin: 0;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            background: var(--primary);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .theme-toggle {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+
+        .theme-toggle:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+            background: var(--primary);
+            color: #ffffff;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: 40px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        textarea {
+            width: calc(100% - 40px);
+            height: 160px;
+            margin: 0 0 30px 0;
+            padding: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 10px;
+            color: var(--text);
+            resize: vertical;
+            transition: var(--transition);
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.2), inset 0 2px 10px rgba(0,0,0,0.05);
+            transform: scale(1.01);
+        }
+
+        #output {
+            padding: 30px;
+            border-radius: 10px;
+            background: var(--card-bg);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            position: relative;
+        }
+
+        .hex-display {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+            word-break: break-all;
+            line-height: 1.8;
+        }
+
+        .hex-chunk {
+            padding: 2px 6px;
+            margin: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            display: inline-block;
+            transition: var(--transition);
+            color: #000;
+        }
+
+        .hex-chunk:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .hex-chunk:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .unknown-data {
+            background: #808080; /* Gray for unknown data */
+        }
+
+        .eth-dest-mac { background: #42a5f5; }
+        .eth-src-mac { background: #60a5fa; }
+        .eth-type { background: #93c5fd; }
+        .arp-hw-type { background: #cddc39; }
+        .arp-proto-type { background: #d4e157; }
+        .arp-opcode { background: #dce775; }
+        .arp-sender-mac { background: #e6ee9c; }
+        .arp-sender-ip { background: #f0f4c3; }
+        .arp-target-mac { background: #e6ee9c; }
+        .arp-target-ip { background: #f0f4c3; }
+        .ip-version { background: #4caf50; }
+        .ip-tos { background: #66bb6a; }
+        .ip-len { background: #81c784; }
+        .ip-id { background: #a5d6a7; }
+        .ip-frag { background: #c8e6c9; }
+        .ip-ttl { background: #dcedc8; }
+        .ip-proto { background: #e8f5e9; }
+        .ip-checksum { background: #f1f8e9; }
+        .ip-src { background: #81c784; }
+        .ip-dest { background: #a5d6a7; }
+        .ipv6-version { background: #8bc34a; }
+        .ipv6-next { background: #9ccc65; }
+        .ipv6-src { background: #aed581; }
+        .ipv6-dest { background: #c5e1a5; }
+        .tcp-src { background: #ff9800; }
+        .tcp-dest { background: #ffb300; }
+        .tcp-seq { background: #ffca28; }
+        .tcp-ack { background: #ffd54f; }
+        .tcp-flags { background: #ffe082; }
+        .tcp-win { background: #ffee58; }
+        .tcp-checksum { background: #fff59d; }
+        .udp-src { background: #9c27b0; }
+        .udp-dest { background: #ab47bc; }
+        .udp-len { background: #ba68c8; }
+        .udp-checksum { background: #ce93d8; }
+        .icmp-type { background: #f44336; }
+        .icmp-code { background: #ef5350; }
+        .vlan-id { background: #8d5524; }
+
+        .header {
+            padding: 25px;
+            margin: 15px 0;
+            border-radius: 10px;
+            position: relative;
+            transition: var(--transition);
+            overflow: hidden;
+            border: 1px solid var(--input-border);
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 6px;
+            height: 100%;
+            background: linear-gradient(to bottom, var(--primary), var(--accent));
+        }
+
+        .header:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 40px rgba(0,0,0,0.2);
+        }
+
+        .eth-header { background: rgba(66, 165, 245, 0.15); }
+        .arp-header { background: rgba(205, 220, 57, 0.15); }
+        .ip-header { background: rgba(76, 175, 80, 0.15); }
+        .ipv6-header { background: rgba(139, 195, 74, 0.15); }
+        .tcp-header { background: rgba(255, 152, 0, 0.15); }
+        .udp-header { background: rgba(156, 39, 176, 0.15); }
+        .icmp-header { background: rgba(244, 67, 54, 0.15); }
+        .vlan-header { background: rgba(121, 85, 72, 0.15); }
+
+        .header-title {
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--text);
+            opacity: 0.95;
+            font-size: 16px;
+        }
+
+        .error {
+            color: #fecaca;
+            background: rgba(244, 67, 54, 0.15);
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 6px solid #f87171;
+            font-weight: 500;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 20px; }
+            .container { padding: 25px; }
+            .top-bar { padding: 10px 15px; }
+            h1 { font-size: 2em; }
+            .theme-toggle { padding: 10px 18px; }
+            textarea { width: calc(100% - 40px); }
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="top-bar">
+        <h1>Simple Hex Packet Analyzer 🚀</h1>
+        <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+    </div>
+    <div class="container">
+        <textarea id="hexInput" placeholder="Paste hex packet content here (e.g., 02020202020201010101010108004500003512340000ff11a37e0101010102020202026f026f0021707e0600ff070033000000eaeb9c0b0b2028b881b411feaa0216fa)"></textarea>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const hexInput = document.getElementById('hexInput');
+        const output = document.getElementById('output');
+
+        hexInput.addEventListener('input', parsePacket);
+
+        function toggleTheme() {
+            const body = document.body;
+            const currentTheme = body.getAttribute('data-theme');
+            body.setAttribute('data-theme', currentTheme === 'dark' ? 'light' : 'dark');
+        }
+
+        const etherTypes = {
+            0x0800: 'IPv4',
+            0x0806: 'ARP',
+            0x8100: 'VLAN',
+            0x86DD: 'IPv6',
+            0x8847: 'MPLS',
+            0x88CC: 'LLDP'
+        };
+
+        const ipProtocols = {
+            1: 'ICMP',
+            2: 'IGMP',
+            6: 'TCP',
+            17: 'UDP',
+            41: 'IPv6',
+            89: 'OSPF',
+            103: 'PIM'
+        };
+
+        function formatMAC(hex) {
+            return hex.match(/.{2}/g).join(':').toLowerCase();
+        }
+
+        function parsePacket() {
+            output.innerHTML = '';
+            const hex = hexInput.value.replace(/\s/g, '');
+            if (!hex.match(/^[0-9A-Fa-f]+$/)) {
+                output.innerHTML = '<div class="error">Invalid hex input</div>';
+                return;
+            }
+            if (hex.length % 2 !== 0) {
+                output.innerHTML = '<div class="error">Hex string must have even length</div>';
+                return;
+            }
+
+            try {
+                const bytes = hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16));
+                let html = '<div class="hex-display">';
+                let details = '';
+
+                // Ethernet Header
+                html += `<span class="hex-chunk eth-dest-mac" data-tooltip="Destination MAC: ${formatMAC(hex.slice(0, 12))}">${hex.slice(0, 12)}</span>`;
+                html += `<span class="hex-chunk eth-src-mac" data-tooltip="Source MAC: ${formatMAC(hex.slice(12, 24))}">${hex.slice(12, 24)}</span>`;
+                html += `<span class="hex-chunk eth-type" data-tooltip="EtherType: ${etherTypes[parseInt(hex.slice(24, 28), 16)] || 'Unknown'}">${hex.slice(24, 28)}</span>`;
+                details += '<div class="header eth-header"><div class="header-title">';
+                details += `Ethernet Header (${hex.slice(0, 28)})</div>`;
+                details += `Destination MAC: ${formatMAC(hex.slice(0, 12))}<br>`;
+                details += `Source MAC: ${formatMAC(hex.slice(12, 24))}<br>`;
+                details += `EtherType: ${hex.slice(24, 28)} (${etherTypes[parseInt(hex.slice(24, 28), 16)] || 'Unknown'})`;
+                details += '</div>';
+
+                const etherType = parseInt(hex.slice(24, 28), 16);
+                let offset = 14;
+
+                if (etherType === 0x0800 && hex.length >= 34) {
+                    const { hexHtml, detailHtml, newOffset } = parseIPv4(hex, bytes, offset);
+                    html += hexHtml;
+                    details += detailHtml;
+                    offset = newOffset;
+                } else if (etherType === 0x0806 && hex.length >= 42) {
+                    html += `<span class="hex-chunk arp-hw-type" data-tooltip="Hardware Type">${hex.slice(28, 32)}</span>`;
+                    html += `<span class="hex-chunk arp-proto-type" data-tooltip="Protocol Type">${hex.slice(32, 36)}</span>`;
+                    html += `<span class="hex-chunk arp-opcode" data-tooltip="Operation: ${parseInt(hex.slice(40, 44), 16) === 1 ? 'Request' : parseInt(hex.slice(40, 44), 16) === 2 ? 'Reply' : 'Other'}">${hex.slice(40, 44)}</span>`;
+                    html += `<span class="hex-chunk arp-sender-mac" data-tooltip="Sender MAC: ${formatMAC(hex.slice(44, 56))}">${hex.slice(44, 56)}</span>`;
+                    html += `<span class="hex-chunk arp-sender-ip" data-tooltip="Sender IP: ${bytes.slice(28, 32).join('.')}">${hex.slice(56, 64)}</span>`;
+                    html += `<span class="hex-chunk arp-target-mac" data-tooltip="Target MAC: ${formatMAC(hex.slice(66, 78))}">${hex.slice(66, 78)}</span>`;
+                    html += `<span class="hex-chunk arp-target-ip" data-tooltip="Target IP: ${bytes.slice(38, 42).join('.')}">${hex.slice(78, 86)}</span>`;
+                    details += '<div class="header arp-header"><div class="header-title">';
+                    details += `ARP Header (${hex.slice(28, 56)})</div>`;
+                    const opcode = parseInt(hex.slice(40, 44), 16);
+                    details += `Hardware Type: ${hex.slice(28, 32)}<br>`;
+                    details += `Protocol Type: ${hex.slice(32, 36)}<br>`;
+                    details += `Operation: ${opcode} (${opcode === 1 ? 'Request' : opcode === 2 ? 'Reply' : 'Other'})<br>`;
+                    details += `Sender MAC: ${formatMAC(hex.slice(44, 56))}<br>`;
+                    details += `Sender IP: ${bytes.slice(28, 32).join('.')}<br>`;
+                    details += `Target MAC: ${formatMAC(hex.slice(66, 78))}<br>`;
+                    details += `Target IP: ${bytes.slice(38, 42).join('.')}`;
+                    details += '</div>';
+                    offset += 28;
+                } else if (etherType === 0x86DD && hex.length >= 54) {
+                    const { hexHtml, detailHtml, newOffset } = parseIPv6(hex, bytes, offset);
+                    html += hexHtml;
+                    details += detailHtml;
+                    offset = newOffset;
+                } else if (etherType === 0x8100 && hex.length >= 32) {
+                    html += `<span class="hex-chunk vlan-id" data-tooltip="VLAN ID: ${parseInt(hex.slice(30, 34), 16) & 0x0FFF}">${hex.slice(28, 36)}</span>`;
+                    details += '<div class="header vlan-header"><div class="header-title">';
+                    details += `VLAN Tag (${hex.slice(28, 36)})</div>`;
+                    const vlanId = parseInt(hex.slice(30, 34), 16) & 0x0FFF;
+                    details += `VLAN ID: ${vlanId}`;
+                    details += '</div>';
+                    offset += 4;
+                    const nextEtherType = parseInt(hex.slice(32, 36), 16);
+                    if (nextEtherType === 0x0800) {
+                        const { hexHtml, detailHtml, newOffset } = parseIPv4(hex, bytes, offset);
+                        html += hexHtml;
+                        details += detailHtml;
+                        offset = newOffset;
+                    } else if (nextEtherType === 0x86DD) {
+                        const { hexHtml, detailHtml, newOffset } = parseIPv6(hex, bytes, offset);
+                        html += hexHtml;
+                        details += detailHtml;
+                        offset = newOffset;
+                    }
+                }
+
+                // Add remaining unparsed bytes as unknown data
+                if (offset * 2 < hex.length) {
+                    const unknownData = hex.slice(offset * 2);
+                    html += `<span class="hex-chunk unknown-data" data-tooltip="Unknown Data">${unknownData}</span>`;
+                }
+
+                html += '</div>' + details;
+                output.innerHTML = html;
+            } catch (e) {
+                output.innerHTML = '<div class="error">Error parsing packet: ' + e.message + '</div>';
+            }
+        }
+
+        function parseIPv4(hex, bytes, offset) {
+            const version = parseInt(hex.slice(offset * 2, offset * 2 + 1), 16) >> 4;
+            const ihl = parseInt(hex.slice(offset * 2, offset * 2 + 1), 16) & 0x0F;
+            const tos = parseInt(hex.slice(offset * 2 + 2, offset * 2 + 4), 16);
+            const totalLength = parseInt(hex.slice(offset * 2 + 4, offset * 2 + 8), 16);
+            const id = parseInt(hex.slice(offset * 2 + 8, offset * 2 + 12), 16);
+            const fragOffset = parseInt(hex.slice(offset * 2 + 12, offset * 2 + 16), 16);
+            const ttl = parseInt(hex.slice(offset * 2 + 16, offset * 2 + 18), 16);
+            const protocol = parseInt(hex.slice(offset * 2 + 18, offset * 2 + 20), 16);
+            const checksum = hex.slice(offset * 2 + 20, offset * 2 + 24);
+            const ipHeaderEnd = offset + ihl * 4;
+
+            let hexHtml = `<span class="hex-chunk ip-version" data-tooltip="Version: ${version}, Header Length: ${ihl * 4} bytes">${hex.slice(offset * 2, offset * 2 + 2)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-tos" data-tooltip="Type of Service: ${tos}">${hex.slice(offset * 2 + 2, offset * 2 + 4)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-len" data-tooltip="Total Length: ${totalLength}">${hex.slice(offset * 2 + 4, offset * 2 + 8)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-id" data-tooltip="Identification: ${id}">${hex.slice(offset * 2 + 8, offset * 2 + 12)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-frag" data-tooltip="Fragment Offset: ${fragOffset}">${hex.slice(offset * 2 + 12, offset * 2 + 16)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-ttl" data-tooltip="Time to Live: ${ttl}">${hex.slice(offset * 2 + 16, offset * 2 + 18)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-proto" data-tooltip="Protocol: ${ipProtocols[protocol] || 'Unknown'}">${hex.slice(offset * 2 + 18, offset * 2 + 20)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-checksum" data-tooltip="Checksum: ${checksum}">${hex.slice(offset * 2 + 20, offset * 2 + 24)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-src" data-tooltip="Source IP: ${bytes.slice(offset + 12, offset + 16).join('.')}">${hex.slice(offset * 2 + 24, offset * 2 + 32)}</span>`;
+            hexHtml += `<span class="hex-chunk ip-dest" data-tooltip="Destination IP: ${bytes.slice(offset + 16, offset + 20).join('.')}">${hex.slice(offset * 2 + 32, offset * 2 + 40)}</span>`;
+            
+            let detailHtml = '<div class="header ip-header"><div class="header-title">';
+            detailHtml += `IPv4 Header (${hex.slice(offset * 2, ipHeaderEnd * 2)})</div>`;
+            detailHtml += `Version: ${version}<br>`;
+            detailHtml += `Header Length: ${ihl * 4} bytes<br>`;
+            detailHtml += `Type of Service: ${tos}<br>`;
+            detailHtml += `Total Length: ${totalLength}<br>`;
+            detailHtml += `Identification: ${id}<br>`;
+            detailHtml += `Fragment Offset: ${fragOffset}<br>`;
+            detailHtml += `Time to Live: ${ttl}<br>`;
+            detailHtml += `Protocol: ${hex.slice(offset * 2 + 18, offset * 2 + 20)} (${ipProtocols[protocol] || 'Unknown'})<br>`;
+            detailHtml += `Checksum: ${checksum}<br>`;
+            detailHtml += `Source IP: ${bytes.slice(offset + 12, offset + 16).join('.')}<br>`;
+            detailHtml += `Destination IP: ${bytes.slice(offset + 16, offset + 20).join('.')}`;
+            detailHtml += '</div>';
+
+            if (protocol === 6 && hex.length >= (offset + 20) * 2) {
+                const tcp = parseTCP(hex, offset + 20);
+                hexHtml += tcp.hexHtml;
+                detailHtml += tcp.detailHtml;
+                return { hexHtml, detailHtml, newOffset: offset + 40 };
+            } else if (protocol === 17 && hex.length >= (offset + 20 + 8) * 2) { // Corrected length check for UDP (20 bytes IPv4 + 8 bytes UDP)
+                const udp = parseUDP(hex, offset + 20);
+                hexHtml += udp.hexHtml;
+                detailHtml += udp.detailHtml;
+                return { hexHtml, detailHtml, newOffset: offset + 20 + 8 };
+            } else if (protocol === 1 && hex.length >= (offset + 20 + 4) * 2) {
+                const icmp = parseICMP(hex, offset + 20);
+                hexHtml += icmp.hexHtml;
+                detailHtml += icmp.detailHtml;
+                return { hexHtml, detailHtml, newOffset: offset + 20 + 4 };
+            }
+            return { hexHtml, detailHtml, newOffset: ipHeaderEnd };
+        }
+
+        function parseIPv6(hex, bytes, offset) {
+            const ipHeaderEnd = offset + 40;
+            let hexHtml = `<span class="hex-chunk ipv6-version" data-tooltip="Version: ${parseInt(hex.slice(offset * 2, offset * 2 + 1), 16) >> 4}">${hex.slice(offset * 2, offset * 2 + 2)}</span>`;
+            hexHtml += hex.slice(offset * 2 + 2, (offset + 6) * 2);
+            hexHtml += `<span class="hex-chunk ipv6-next" data-tooltip="Next Header: ${ipProtocols[bytes[offset + 6]] || 'Unknown'}">${hex.slice((offset + 6) * 2, (offset + 7) * 2)}</span>`;
+            hexHtml += hex.slice((offset + 7) * 2, (offset + 8) * 2);
+            hexHtml += `<span class="hex-chunk ipv6-src" data-tooltip="Source IP: ${bytes.slice(offset + 8, offset + 24).map(b => b.toString(16).padStart(2, '0')).join(':').match(/.{4}/g).join(':')}">${hex.slice((offset + 8) * 2, (offset + 24) * 2)}</span>`;
+            hexHtml += `<span class="hex-chunk ipv6-dest" data-tooltip="Destination IP: ${bytes.slice(offset + 24, offset + 40).map(b => b.toString(16).padStart(2, '0')).join(':').match(/.{4}/g).join(':')}">${hex.slice((offset + 24) * 2, (offset + 40) * 2)}</span>`;
+            let detailHtml = '<div class="header ipv6-header"><div class="header-title">';
+            detailHtml += `IPv6 Header (${hex.slice(offset * 2, ipHeaderEnd * 2)})</div>`;
+            const version = parseInt(hex.slice(offset * 2, offset * 2 + 1), 16) >> 4;
+            detailHtml += `Version: ${version}<br>`;
+            detailHtml += `Next Header: ${hex.slice((offset + 6) * 2, (offset + 7) * 2)} (${ipProtocols[bytes[offset + 6]] || 'Unknown'})<br>`;
+            detailHtml += `Source IP: ${bytes.slice(offset + 8, offset + 24).map(b => b.toString(16).padStart(2, '0')).join(':').match(/.{4}/g).join(':')}<br>`;
+            detailHtml += `Dest IP: ${bytes.slice(offset + 24, offset + 40).map(b => b.toString(16).padStart(2, '0')).join(':').match(/.{4}/g).join(':')}`;
+            detailHtml += '</div>';
+
+            const nextHeader = bytes[offset + 6];
+            if (nextHeader === 6) {
+                const tcp = parseTCP(hex, offset + 40);
+                hexHtml += tcp.hexHtml;
+                detailHtml += tcp.detailHtml;
+                return { hexHtml, detailHtml, newOffset: offset + 40 + 20 };
+            } else if (nextHeader === 17) {
+                const udp = parseUDP(hex, offset + 40);
+                hexHtml += udp.hexHtml;
+                detailHtml += udp.detailHtml;
+                return { hexHtml, detailHtml, newOffset: offset + 40 + 8 };
+            } else if (nextHeader === 1) {
+                const icmp = parseICMP(hex, offset + 40);
+                hexHtml += icmp.hexHtml;
+                detailHtml += icmp.detailHtml;
+                return { hexHtml, detailHtml, newOffset: offset + 40 + 4 };
+            }
+            return { hexHtml, detailHtml, newOffset: ipHeaderEnd };
+        }
+
+        function parseTCP(hex, offset) {
+            const srcPort = parseInt(hex.slice(offset * 2, offset * 2 + 4), 16);
+            const dstPort = parseInt(hex.slice(offset * 2 + 4, offset * 2 + 8), 16);
+            const seqNum = parseInt(hex.slice(offset * 2 + 8, offset * 2 + 16), 16);
+            const ackNum = parseInt(hex.slice(offset * 2 + 16, offset * 2 + 24), 16);
+            const flags = parseInt(hex.slice(offset * 2 + 26, offset * 2 + 28), 16);
+            const window = parseInt(hex.slice(offset * 2 + 28, offset * 2 + 32), 16);
+            const checksum = hex.slice(offset * 2 + 32, offset * 2 + 36);
+            const hexHtml = `<span class="hex-chunk tcp-src" data-tooltip="Source Port: ${srcPort}">${hex.slice(offset * 2, offset * 2 + 4)}</span>` +
+                            `<span class="hex-chunk tcp-dest" data-tooltip="Destination Port: ${dstPort}">${hex.slice(offset * 2 + 4, offset * 2 + 8)}</span>` +
+                            `<span class="hex-chunk tcp-seq" data-tooltip="Sequence Number: ${seqNum}">${hex.slice(offset * 2 + 8, offset * 2 + 16)}</span>` +
+                            `<span class="hex-chunk tcp-ack" data-tooltip="Acknowledgment Number: ${ackNum}">${hex.slice(offset * 2 + 16, offset * 2 + 24)}</span>` +
+                            `<span class="hex-chunk tcp-flags" data-tooltip="Flags: ${flags.toString(16).padStart(2, '0')}">${hex.slice(offset * 2 + 24, offset * 2 + 28)}</span>` +
+                            `<span class="hex-chunk tcp-win" data-tooltip="Window Size: ${window}">${hex.slice(offset * 2 + 28, offset * 2 + 32)}</span>` +
+                            `<span class="hex-chunk tcp-checksum" data-tooltip="Checksum: ${checksum}">${hex.slice(offset * 2 + 32, offset * 2 + 36)}</span>` +
+                            hex.slice(offset * 2 + 36, offset * 2 + 40);
+            const detailHtml = '<div class="header tcp-header"><div class="header-title">' +
+                `TCP Header (${hex.slice(offset * 2, offset * 2 + 40)})</div>` +
+                `Source Port: ${srcPort}<br>` +
+                `Destination Port: ${dstPort}<br>` +
+                `Sequence Number: ${seqNum}<br>` +
+                `Acknowledgment Number: ${ackNum}<br>` +
+                `Flags: ${flags.toString(16).padStart(2, '0')}<br>` +
+                `Window Size: ${window}<br>` +
+                `Checksum: ${checksum}` +
+                '</div>';
+            return { hexHtml, detailHtml };
+        }
+
+        function parseUDP(hex, offset) {
+            const srcPort = parseInt(hex.slice(offset * 2, offset * 2 + 4), 16);
+            const dstPort = parseInt(hex.slice(offset * 2 + 4, offset * 2 + 8), 16);
+            const length = parseInt(hex.slice(offset * 2 + 8, offset * 2 + 12), 16);
+            const checksum = hex.slice(offset * 2 + 12, offset * 2 + 16);
+            const hexHtml = `<span class="hex-chunk udp-src" data-tooltip="Source Port: ${srcPort}">${hex.slice(offset * 2, offset * 2 + 4)}</span>` +
+                            `<span class="hex-chunk udp-dest" data-tooltip="Destination Port: ${dstPort}">${hex.slice(offset * 2 + 4, offset * 2 + 8)}</span>` +
+                            `<span class="hex-chunk udp-len" data-tooltip="Length: ${length}">${hex.slice(offset * 2 + 8, offset * 2 + 12)}</span>` +
+                            `<span class="hex-chunk udp-checksum" data-tooltip="Checksum: ${checksum}">${hex.slice(offset * 2 + 12, offset * 2 + 16)}</span>`;
+            const detailHtml = '<div class="header udp-header"><div class="header-title">' +
+                `UDP Header (${hex.slice(offset * 2, offset * 2 + 16)})</div>` +
+                `Source Port: ${srcPort}<br>` +
+                `Destination Port: ${dstPort}<br>` +
+                `Length: ${length}<br>` +
+                `Checksum: ${checksum}` +
+                '</div>';
+            return { hexHtml, detailHtml };
+        }
+
+        function parseICMP(hex, offset) {
+            const type = parseInt(hex.slice(offset * 2, offset * 2 + 2), 16);
+            const code = parseInt(hex.slice(offset * 2 + 2, offset * 2 + 4), 16);
+            const hexHtml = `<span class="hex-chunk icmp-type" data-tooltip="Type: ${type === 8 ? 'Echo Request' : type === 0 ? 'Echo Reply' : 'Other'}">${hex.slice(offset * 2, offset * 2 + 2)}</span>` +
+                            `<span class="hex-chunk icmp-code" data-tooltip="Code: ${code}">${hex.slice(offset * 2 + 2, offset * 2 + 4)}</span>` +
+                            hex.slice(offset * 2 + 4, offset * 2 + 8);
+            const detailHtml = '<div class="header icmp-header"><div class="header-title">' +
+                `ICMP Header (${hex.slice(offset * 2, offset * 2 + 8)})</div>` +
+                `Type: ${type} (${type === 8 ? 'Echo Request' : type === 0 ? 'Echo Reply' : 'Other'})<br>` +
+                `Code: ${code}` +
+                '</div>';
+            return { hexHtml, detailHtml };
+        }
+    </script>
+</body>
+</html>
